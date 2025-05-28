@@ -38,8 +38,55 @@ nl_to_chart_tool/
 
 - Python 3.8+
 - Node.js 18+ (which includes npm) or Yarn
-- An LLM API key or local Ollama setup (for future phases)
+# LLM API keys and local Ollama setup are now managed via config.ini (see LLM Configuration section)
 - Database instances (MySQL, PostgreSQL, etc. - for future phases)
+
+## LLM Configuration
+
+This tool supports multiple Large Language Models (LLMs) for translating natural language to SQL. Configuration for API keys and LLM-specific settings is managed via a configuration file.
+
+1.  **Locate the Example Configuration File:**
+    In the `nl_to_chart_tool/backend/` directory, you will find a file named `config.example.ini`.
+
+2.  **Create Your Configuration File:**
+    Make a copy of `config.example.ini` and rename it to `config.ini` in the *same directory* (`nl_to_chart_tool/backend/config.ini`).
+
+    ```bash
+    cp nl_to_chart_tool/backend/config.example.ini nl_to_chart_tool/backend/config.ini
+    ```
+
+3.  **Edit `config.ini`:**
+    Open `nl_to_chart_tool/backend/config.ini` with a text editor and fill in your API keys and desired settings under the appropriate sections.
+
+    **Example Sections in `config.ini`:**
+
+    *   **`[api_keys]`**:
+        *   `deepseek_api_key = YOUR_DEEPSEEK_API_KEY_HERE`
+        *   `qwen_api_key = YOUR_QWEN_API_KEY_HERE` (This is for Alibaba Cloud DashScope Qwen models)
+
+    *   **`[ollama_settings]`**:
+        *   `default_model = llama2` (Specify the default Ollama model you have pulled, e.g., `llama3`, `mistral`)
+        *   `endpoint = http://localhost:11434` (If your Ollama service runs on a different address/port)
+        Ensure your Ollama service is running and the specified model is available (e.g., `ollama pull llama2`).
+
+    *   **`[deepseek_settings]`**:
+        *   `default_model = deepseek-coder` (Default model for DeepSeek)
+
+    *   **`[qwen_settings]`**:
+        *   `default_model = qwen-turbo` (Default model for Qwen)
+
+    **Important:** The `config.ini` file contains sensitive API keys and should *not* be committed to version control. It should be automatically ignored by Git if a `.gitignore` file is set up correctly (see next step).
+
+4.  **API Usage:**
+    The backend API endpoint `POST /api/query` uses these LLM services. You can specify the desired LLM provider in the JSON payload:
+    ```json
+    {
+      "natural_language_query": "your query here",
+      "llm_provider": "ollama" // or "deepseek", "qwen"
+      // "model_name": "specific-model-if-not-default" // Optional, overrides default from config.ini
+    }
+    ```
+    If `llm_provider` is omitted, it defaults to the one specified as `DEFAULT_LLM_PROVIDER` in the code (currently "ollama"). The system will use the API keys and default models specified in your `config.ini`.
 
 ## Running the Application (Current State)
 

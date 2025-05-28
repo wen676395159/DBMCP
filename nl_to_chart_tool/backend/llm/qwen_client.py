@@ -2,29 +2,35 @@ import httpx
 import os
 import json
 from typing import Optional
+from backend.core.config import get_api_key, get_llm_setting # New import
 
-# Qwen (Tongyi Qwen by Alibaba Cloud) API Configuration
-# Note: The actual endpoint and model names might vary based on the specific Qwen service version (e.g., qwen-turbo, qwen-plus, qwen-max)
-# This is a common pattern for DashScope-provided Qwen models.
 QWEN_API_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation"
-DEFAULT_QWEN_MODEL = "qwen-turbo" # A common and cost-effective model, adjust if needed
+FALLBACK_QWEN_MODEL = "qwen-turbo"
+DEFAULT_QWEN_MODEL = get_llm_setting('qwen', 'default_model', FALLBACK_QWEN_MODEL)
 
 async def get_sql_from_qwen(
     natural_language_query: str,
     api_key: Optional[str] = None,
-    model: str = DEFAULT_QWEN_MODEL,
+    model: Optional[str] = None, # Changed to Optional
     api_endpoint: str = QWEN_API_ENDPOINT,
     system_prompt: Optional[str] = None
 ) -> str:
     '''
     Sends a natural language query to the Qwen API and expects a SQL query in return.
     '''
-    if api_key is None:
-        api_key = os.getenv("QWEN_API_KEY") # Or DASHSCOPE_API_KEY, depending on common practice
-        if not api_key:
-            api_key = os.getenv("DASHSCOPE_API_KEY") # Check for alternative key
-            if not api_key:
-                return "Error: QWEN_API_KEY (or DASHSCOPE_API_KEY) environment variable not set."
+    effective_api_key = api_key
+    if not effective_api_key:
+        effective_api_key = get_api_key("QWEN") # Get from config file
+    
+    if not effective_api_key: # Fallback to environment variable
+        effective_api_key = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+        if effective_api_key:
+            print("Qwen API Key found in environment variables (QWEN_API_KEY/DASHSCOPE_API_KEY). Consider moving to config.ini.")
+
+    if not effective_api_key:
+        return "Error: QWEN_API_KEY (or DASHSCOPE_API_KEY) not found in config file or environment variables."
+
+    effective_model = model if model is not None else DEFAULT_QWEN_MODEL
 
     if not system_prompt:
         # Qwen models often use <|system|>, <|user|>, <|assistant|> roles
@@ -32,7 +38,7 @@ async def get_sql_from_qwen(
 
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {effective_api_key}", # MODIFIED
         "Content-Type": "application/json",
         # "X-DashScope-SSE": "enable", # For streaming, not used here
     }
@@ -40,7 +46,7 @@ async def get_sql_from_qwen(
     # Qwen's input format might be slightly different, often involving an 'input' and 'parameters' field.
     # The 'messages' structure is also common for chat-tuned models.
     payload = {
-        "model": model,
+        "model": effective_model, # MODIFIED
         "input": {
             "messages": [
                 {"role": "system", "content": system_prompt},
@@ -55,7 +61,7 @@ async def get_sql_from_qwen(
 
     async with httpx.AsyncClient(timeout=60.0) as client:
         try:
-            print(f"Sending query to Qwen ({model} at {api_endpoint}): {natural_language_query}")
+            print(f"Sending query to Qwen ({effective_model} at {api_endpoint}): {natural_language_query}") # MODIFIED
             response = await client.post(api_endpoint, json=payload, headers=headers)
             response.raise_for_status()
 
@@ -130,15 +136,12 @@ if __name__ == '__main__':
     import asyncio
 
     async def test_qwen():
-        # Ensure QWEN_API_KEY (or DASHSCOPE_API_KEY) environment variable is set
+        print(f"Qwen Client using Default Model: {DEFAULT_QWEN_MODEL}")
+        # Ensure QWEN_API_KEY (or DASHSCOPE_API_KEY) environment variable is set OR in config.ini
         # For example: export QWEN_API_KEY='your_api_key_here'
-        api_key_present = os.getenv("QWEN_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
-        if not api_key_present:
-            print("QWEN_API_KEY/DASHSCOPE_API_KEY not found in environment. Skipping test.")
-            print("Please set it: export QWEN_API_KEY='your_actual_api_key'")
-            return
+        # The function get_sql_from_qwen will now try to fetch API key from config first,
+        # then environment variables.
 
-        print(f"Using Qwen model: {DEFAULT_QWEN_MODEL}")
         test_query_1 = "List all departments with more than 50 employees."
         print(f"Testing Qwen with query: '{test_query_1}'")
         sql_1 = await get_sql_from_qwen(test_query_1)
@@ -149,7 +152,7 @@ if __name__ == '__main__':
         sql_2 = await get_sql_from_qwen(test_query_2)
         print(f"Generated SQL: {sql_2}\n")
 
-    # To run this test (ensure QWEN_API_KEY/DASHSCOPE_API_KEY is set):
+    # To run this test (ensure QWEN_API_KEY/DASHSCOPE_API_KEY is set in config.ini or environment):
     # 1. Navigate to the `nl_to_chart_tool/backend` directory.
     # 2. Set the QWEN_API_KEY environment variable.
     # 3. Run the command: `python -m llm.qwen_client`
